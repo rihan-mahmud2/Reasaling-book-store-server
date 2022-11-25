@@ -7,7 +7,7 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 const port = process.env.PORT || 5000;
-const { MongoClient, ServerApiVersion } = require("mongodb");
+const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASSWORD}@cluster0.vjq6aig.mongodb.net/?retryWrites=true&w=majority`;
 const client = new MongoClient(uri, {
@@ -22,7 +22,7 @@ async function run() {
       .db("Bookshop")
       .collection("bookCategories");
     const userCollection = client.db("Bookshop").collection("users");
-
+    const bookingCollection = client.db("Bookshop").collection("bookings");
     app.put("/jwt", async (req, res) => {
       const email = req.body;
       console.log(email);
@@ -32,6 +32,23 @@ async function run() {
       res.send({ token });
     });
 
+    //saving the booking to mongodb
+    app.post("/bookings", async (req, res) => {
+      const userBooking = req.body;
+      const booking = await bookingCollection.insertOne(userBooking);
+      res.send(booking);
+    });
+
+    //get my orders from booking collection
+    app.get("/bookings/:email", async (req, res) => {
+      const email = req.params.email;
+      const filter = {
+        email: email,
+      };
+      const bookings = await bookingCollection.find(filter).toArray();
+      res.send(bookings);
+    });
+
     app.get("/users/:email", async (req, res) => {
       const email = req.params.email;
       const query = { email: email };
@@ -39,6 +56,17 @@ async function run() {
       const user = await userCollection.findOne(query);
 
       res.send({ role: user?.role });
+    });
+
+    //GET ALL USERS
+    app.get("/users", async (req, res) => {
+      const role = req.query.role;
+      console.log(role);
+      const query = {
+        role: role,
+      };
+      const users = await userCollection.find(query).toArray();
+      res.send(users);
     });
 
     app.post("/users", async (req, res) => {
@@ -62,6 +90,8 @@ async function run() {
       const categories = await categroyCollection.find(query).toArray();
       res.send(categories);
     });
+
+    //getting the my products with email query
     app.get("/category", async (req, res) => {
       const email = req.query.email;
       console.log(email);
@@ -70,6 +100,30 @@ async function run() {
       };
       const categories = await categroyCollection.find(query).toArray();
       res.send(categories);
+    });
+
+    //changing the status of the product sold or advertised
+    app.put("/category/:id", async (req, res) => {
+      const id = req.params.id;
+      const filter = {
+        _id: ObjectId(id),
+      };
+      const updatedDoc = {
+        $set: {
+          status: "sold",
+        },
+      };
+      const options = {
+        upsert: true,
+      };
+
+      const result = await categroyCollection.updateOne(
+        filter,
+        updatedDoc,
+        options
+      );
+
+      res.send(result);
     });
   } catch {}
 }
