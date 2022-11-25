@@ -72,7 +72,7 @@ async function run() {
     });
 
     //get my orders from booking collection
-    app.get("/bookings/:email", async (req, res) => {
+    app.get("/bookings/:email", veryfyJwt, async (req, res) => {
       const email = req.params.email;
       const filter = {
         email: email,
@@ -142,7 +142,7 @@ async function run() {
       };
       const updatedDoc = {
         $set: {
-          status: "sold",
+          advertised: "yes",
         },
       };
       const options = {
