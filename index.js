@@ -16,6 +16,22 @@ const client = new MongoClient(uri, {
   serverApi: ServerApiVersion.v1,
 });
 
+const veryfyJwt = async (req, res, next) => {
+  const authorization = req.headers?.authorization;
+
+  if (!authorization) {
+    res.status(403).send({ message: "Forbidden" });
+  }
+
+  jwt.verify(authorization, process.env.SECRET_API_KEY, (err, decoded) => {
+    if (err) {
+      res.status(401).send({ message: "Unauthorized access" });
+    }
+    req.decoded = decoded;
+    next();
+  });
+};
+
 async function run() {
   try {
     const categroyCollection = client
@@ -31,6 +47,22 @@ async function run() {
       });
       res.send({ token });
     });
+
+    //verify adming route
+
+    const verifyAdmin = async (req, res, next) => {
+      const doecodedEmail = req.decoded.email;
+      const query = {
+        email: doecodedEmail,
+      };
+
+      const user = await userCollection.findOne(query);
+      if (user.roel !== "admin") {
+        res.status(403).send({ message: "forbidden access" });
+      }
+
+      next();
+    };
 
     //saving the booking to mongodb
     app.post("/bookings", async (req, res) => {
