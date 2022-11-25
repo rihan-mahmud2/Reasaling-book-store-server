@@ -37,7 +37,7 @@ async function run() {
       const query = { email: email };
       console.log(email);
       const user = await userCollection.findOne(query);
-      console.log(user);
+
       res.send({ role: user?.role });
     });
 
@@ -45,13 +45,12 @@ async function run() {
       const user = req.body;
       const result = await userCollection.insertOne(user);
       res.send(result);
-      console.log(result);
     });
 
     app.post("/product", async (req, res) => {
       const product = req.body;
       const result = await categroyCollection.insertOne(product);
-      console.log(result);
+
       res.send(result);
     });
 
@@ -59,6 +58,15 @@ async function run() {
       const name = req.params.name;
       const query = {
         category: name,
+      };
+      const categories = await categroyCollection.find(query).toArray();
+      res.send(categories);
+    });
+    app.get("/category", async (req, res) => {
+      const email = req.query.email;
+      console.log(email);
+      const query = {
+        email: email,
       };
       const categories = await categroyCollection.find(query).toArray();
       res.send(categories);
