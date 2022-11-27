@@ -3,6 +3,7 @@ const cors = require("cors");
 const jwt = require("jsonwebtoken");
 require("dotenv").config();
 const app = express();
+const stripe = require("stripe")(process.env.REACT_STRIPE_KEY);
 
 app.use(cors());
 app.use(express.json());
@@ -16,7 +17,33 @@ const client = new MongoClient(uri, {
   serverApi: ServerApiVersion.v1,
 });
 
-const veryfyJwt = async (req, res, next) => {
+const calculateOrderAmount = (items) => {
+  // Replace this constant with a calculation of the order's amount
+  // Calculate the order total on the server to prevent
+  // people from directly manipulating the amount on the client
+  return 100 * items;
+};
+
+app.post("/create-payment-intent", async (req, res) => {
+  const items = req.body;
+
+  // Create a PaymentIntent with the order amount and currency
+  const paymentIntent = await stripe.paymentIntents.create({
+    amount: calculateOrderAmount(items.productPrice),
+    currency: "usd",
+    automatic_payment_methods: {
+      enabled: true,
+    },
+  });
+
+  console.log(paymentIntent.client_secret);
+
+  res.send({
+    clientSecret: paymentIntent.client_secret,
+  });
+});
+
+const veryfyJwt = (req, res, next) => {
   const authorization = req.headers?.authorization;
 
   if (!authorization) {
@@ -39,6 +66,9 @@ async function run() {
       .collection("bookCategories");
     const userCollection = client.db("Bookshop").collection("users");
     const bookingCollection = client.db("Bookshop").collection("bookings");
+    const whishListCollection = client.db("Bookshop").collection("whishlist");
+    const paymentsCollection = client.db("Bookshop").collection("payments");
+    const categoriesCollection = client.db("Bookshop").collection("categories");
     app.put("/jwt", async (req, res) => {
       const email = req.body;
       console.log(email);
@@ -48,16 +78,25 @@ async function run() {
       res.send({ token });
     });
 
+    //get category data
+
+    app.get("/categoires", async (req, res) => {
+      const query = {};
+      const categories = await categoriesCollection.find(query).toArray();
+      res.send(categories);
+    });
+
     //verify adming route
 
     const verifyAdmin = async (req, res, next) => {
       const doecodedEmail = req.decoded.email;
+      console.log(doecodedEmail);
       const query = {
         email: doecodedEmail,
       };
 
       const user = await userCollection.findOne(query);
-      if (user.roel !== "admin") {
+      if (user.role !== "admin") {
         res.status(403).send({ message: "forbidden access" });
       }
 
@@ -71,7 +110,6 @@ async function run() {
       res.send(booking);
     });
 
-    //get my orders from booking collection
     app.get("/bookings/:email", veryfyJwt, async (req, res) => {
       const email = req.params.email;
       const filter = {
@@ -81,19 +119,127 @@ async function run() {
       res.send(bookings);
     });
 
-    app.get("/users/:email", async (req, res) => {
+    app.get("/payment/:id", async (req, res) => {
+      const id = req.params.id;
+      console.log(id);
+      const query = { _id: ObjectId(id) };
+      const booking = await bookingCollection.findOne(query);
+      res.send(booking);
+    });
+
+    //saving teh payment info to database
+    app.post("/payments", async (req, res) => {
+      const payment = req.body;
+      const result = await paymentsCollection.insertOne(payment);
+      const id = payment.bookingId;
+      const category_id = payment.category_id;
+      const filterCategory = { _id: ObjectId(category_id) };
+      const filter = { _id: ObjectId(id) };
+      const updatedDoc = {
+        $set: {
+          paid: true,
+        },
+      };
+      const categoryBooking = await categroyCollection.updateOne(
+        filterCategory,
+        updatedDoc
+      );
+      const paidBooking = await bookingCollection.updateOne(filter, updatedDoc);
+      res.send(result);
+    });
+
+    // get advertised items
+    app.get("/advertised", veryfyJwt, async (req, res) => {
+      const filter = {
+        advertised: "yes",
+      };
+      const advertisedItems = await categroyCollection.find(filter).toArray();
+      res.send(advertisedItems);
+    });
+
+    // get all whislist item
+
+    app.get("/whishlist/:email", veryfyJwt, async (req, res) => {
+      const email = req.params.email;
+      const filter = {
+        userEmail: email,
+      };
+
+      const whishlistItems = await whishListCollection.find(filter).toArray();
+      res.send(whishlistItems);
+    });
+
+    //post whish list items
+
+    app.post("/whishlist", async (req, res) => {
+      const item = req.body;
+      const result = await whishListCollection.insertOne(item);
+      res.send(result);
+    });
+
+    //get my orders from booking collection
+
+    app.get("/users/:email", veryfyJwt, async (req, res) => {
       const email = req.params.email;
       const query = { email: email };
-      console.log(email);
       const user = await userCollection.findOne(query);
 
       res.send({ role: user?.role });
     });
 
+    //deleting seller
+    app.delete("/users/:id", async (req, res) => {
+      const id = req.params.id;
+      const filter = {
+        _id: ObjectId(id),
+      };
+
+      const result = await userCollection.deleteOne(filter);
+
+      res.send(result);
+    });
+
+    // deleting frome whishListCollection
+    app.delete("/whsihlist/:id", async (req, res) => {
+      const id = req.params.id;
+      const filter = {
+        _id: ObjectId(id),
+      };
+
+      const result = await whishListCollection.deleteOne(filter);
+
+      res.send(result);
+    });
+
+    // verifyUser status
+
+    app.put("/verifyUser/:id", async (req, res) => {
+      const id = req.params.id;
+      const filter = {
+        _id: ObjectId(id),
+      };
+      const updatedDoc = {
+        $set: {
+          verified: "yes",
+        },
+      };
+      const options = {
+        upsert: true,
+      };
+
+      const result = await userCollection.updateOne(
+        filter,
+        updatedDoc,
+        options
+      );
+
+      res.send(result);
+    });
+
     //GET ALL USERS
-    app.get("/users", async (req, res) => {
+    app.get("/users", veryfyJwt, async (req, res) => {
       const role = req.query.role;
-      console.log(role);
+
       const query = {
         role: role,
       };
@@ -101,7 +247,16 @@ async function run() {
       res.send(users);
     });
 
-    app.post("/users", async (req, res) => {
+    app.get("/user/:role", async (req, res) => {
+      const role = req.params.role;
+      const filter = {
+        role: role,
+      };
+      const users = await userCollection.find(filter).toArray();
+      res.send(users);
+    });
+
+    app.post("/users", veryfyJwt, async (req, res) => {
       const user = req.body;
       const result = await userCollection.insertOne(user);
       res.send(result);
@@ -114,7 +269,7 @@ async function run() {
       res.send(result);
     });
 
-    app.get("/category/:name", async (req, res) => {
+    app.get("/category/:name", veryfyJwt, async (req, res) => {
       const name = req.params.name;
       const query = {
         category: name,
@@ -123,10 +278,22 @@ async function run() {
       res.send(categories);
     });
 
+    // get seller status
+
+    app.get("/verifiedStatus/:email", veryfyJwt, async (req, res) => {
+      const email = req.params.email;
+      const query = {
+        email: email,
+      };
+
+      const user = await userCollection.findOne(query);
+      res.send(user);
+    });
+
     //getting the my products with email query
     app.get("/category", async (req, res) => {
       const email = req.query.email;
-      console.log(email);
+
       const query = {
         email: email,
       };
@@ -135,7 +302,7 @@ async function run() {
     });
 
     //changing the status of the product sold or advertised
-    app.put("/category/:id", async (req, res) => {
+    app.put("/products/:id", async (req, res) => {
       const id = req.params.id;
       const filter = {
         _id: ObjectId(id),
@@ -154,6 +321,16 @@ async function run() {
         updatedDoc,
         options
       );
+
+      res.send(result);
+    });
+    app.delete("/products/:id", async (req, res) => {
+      const id = req.params.id;
+      const filter = {
+        _id: ObjectId(id),
+      };
+
+      const result = await categroyCollection.deleteOne(filter);
 
       res.send(result);
     });
