@@ -69,6 +69,7 @@ async function run() {
     const whishListCollection = client.db("Bookshop").collection("whishlist");
     const paymentsCollection = client.db("Bookshop").collection("payments");
     const categoriesCollection = client.db("Bookshop").collection("categories");
+    const reportsCollection = client.db("Bookshop").collection("reports");
     app.put("/jwt", async (req, res) => {
       const email = req.body;
       console.log(email);
@@ -78,6 +79,19 @@ async function run() {
       res.send({ token });
     });
 
+    //posting reports data
+    app.post("/reports", async (req, res) => {
+      const reportInfo = req.body;
+      const result = await reportsCollection.insertOne(reportInfo);
+      res.send(result);
+    });
+
+    //getting reported data
+    app.get("/reports", async (req, res) => {
+      const query = {};
+      const result = await reportsCollection.find(query).toArray();
+      res.send(result);
+    });
     //get category data
 
     app.get("/categoires", async (req, res) => {
